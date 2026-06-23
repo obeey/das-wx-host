@@ -24,7 +24,7 @@ wxString UiText(const char* text)
 }
 
 MainFrame::MainFrame()
-    : wxFrame(nullptr, wxID_ANY, UiText("DAS 上位机 - wxWidgets 仿真版"), wxDefaultPosition, wxSize(1380, 860))
+    : wxFrame(nullptr, wxID_ANY, UiText("DAS 上位机 - 仿真版"), wxDefaultPosition, wxSize(1380, 860))
 {
     BuildUi();
     Bind(wxEVT_BUTTON, &MainFrame::OnRun, this, kRunButtonId);
