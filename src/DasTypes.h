@@ -35,6 +35,11 @@ struct AcquisitionConfig {
     double eventDurationSec = 0.25;
     double eventStrainNstrain = 80.0;
 
+    bool useAudioVibration = false;
+    double vibrationSampleRateHz = 0.0;
+    std::vector<float> vibrationSamples;
+    std::string vibrationSourceName;
+
     bool useCuda = true;
 };
 
@@ -65,6 +70,7 @@ struct DasResult {
     double rangeResolutionM = 0.0;
     double estimatedFrequencyHz = 0.0;
     double selectedDistanceM = 0.0;
+    double selectedTimeSec = 0.0;
     bool cudaUsed = false;
     std::string status;
 };

@@ -26,6 +26,8 @@ endif()
 set(DAS_SOURCES
     app.rc
     src/main.cpp
+    src/AudioFileDecoder.cpp
+    src/AudioStreamPlayer.cpp
     src/MainFrame.cpp
     src/PlotPanel.cpp
     src/DasSimulator.cpp
@@ -37,6 +39,9 @@ set(DAS_SOURCES
 add_executable(das_wx_host WIN32 ${DAS_SOURCES})
 target_include_directories(das_wx_host PRIVATE src)
 target_link_libraries(das_wx_host PRIVATE ${wxWidgets_LIBRARIES})
+if(WIN32)
+    target_link_libraries(das_wx_host PRIVATE mfplat mfreadwrite mfuuid winmm)
+endif()
 target_compile_definitions(das_wx_host PRIVATE
     $<$<BOOL:${DAS_HAS_CUDA}>:DAS_WITH_CUDA=1>
     $<$<NOT:$<BOOL:${DAS_HAS_CUDA}>>:DAS_WITH_CUDA=0>

@@ -9,27 +9,21 @@
 namespace {
 constexpr double kPi = 3.1415926535897932384626433832795;
 
-double SmoothGate(double t, double start, double duration, double ramp)
+double LoopSample(const std::vector<float>& samples, double sampleRateHz, double t)
 {
-    if (t < start || t >= start + duration) {
+    if (samples.empty() || sampleRateHz <= 0.0) {
         return 0.0;
     }
-    if (ramp <= 0.0) {
-        return 1.0;
-    }
-    if (t < start + ramp) {
-        const double x = (t - start) / ramp;
-        return 0.5 - 0.5 * std::cos(kPi * x);
-    }
-    if (t >= start + duration - ramp) {
-        const double x = (start + duration - t) / ramp;
-        return 0.5 - 0.5 * std::cos(kPi * x);
-    }
-    return 1.0;
+
+    const double sourcePosition = std::fmod(std::max(0.0, t) * sampleRateHz, static_cast<double>(samples.size()));
+    const auto i0 = static_cast<std::size_t>(sourcePosition);
+    const std::size_t i1 = (i0 + 1) % samples.size();
+    const double frac = sourcePosition - static_cast<double>(i0);
+    return static_cast<double>(samples[i0]) * (1.0 - frac) + static_cast<double>(samples[i1]) * frac;
 }
 }
 
-AcquisitionFrame DasSimulator::Generate(const AcquisitionConfig& config) const
+AcquisitionFrame DasSimulator::Generate(const AcquisitionConfig& config, double startTimeSec)
 {
     AcquisitionFrame frame;
     const double z0 = config.simulationStartM;
@@ -50,10 +44,10 @@ AcquisitionFrame DasSimulator::Generate(const AcquisitionConfig& config) const
         frame.distanceM[iz] = static_cast<float>(z0 + static_cast<double>(iz) * dz);
     }
     for (std::size_t ip = 0; ip < np; ++ip) {
-        frame.slowTimeSec[ip] = static_cast<float>(static_cast<double>(ip) / config.prfHz);
+        frame.slowTimeSec[ip] = static_cast<float>(startTimeSec + static_cast<double>(ip) / config.prfHz);
     }
 
-    std::mt19937 rng(7);
+    std::mt19937 rayleighRng(7);
     std::normal_distribution<float> normal(0.0f, 1.0f);
     std::uniform_real_distribution<float> uniformPhase(0.0f, static_cast<float>(2.0 * kPi));
 
@@ -70,12 +64,12 @@ AcquisitionFrame DasSimulator::Generate(const AcquisitionConfig& config) const
         const double z = frame.distanceM[iz];
         const double loss = std::exp(-attenuationNpPerM * z);
         rayleighX[iz] = static_cast<float>(loss / std::sqrt(2.0)) *
-            std::complex<float>(normal(rng), normal(rng));
+            std::complex<float>(normal(rayleighRng), normal(rayleighRng));
 
-        const float p = uniformPhase(rng);
+        const float p = uniformPhase(rayleighRng);
         const std::complex<float> polRot(std::cos(p), std::sin(p));
         rayleighY[iz] = static_cast<float>(0.75 * loss / std::sqrt(2.0)) *
-            std::complex<float>(normal(rng), normal(rng)) * polRot;
+            std::complex<float>(normal(rayleighRng), normal(rayleighRng)) * polRot;
 
         const double rel = (z - config.eventPositionM) / std::max(0.5, config.eventWidthM);
         spatialProfile[iz] = std::exp(-0.5 * rel * rel);
@@ -85,13 +79,14 @@ AcquisitionFrame DasSimulator::Generate(const AcquisitionConfig& config) const
 
     const double phaseScale = 4.0 * kPi * config.fiberIndex / config.wavelengthM;
     const double strainAmp = config.eventStrainNstrain * 1.0e-9;
-    const double ramp = std::min(0.01, std::max(0.0, config.eventDurationSec * 0.5));
     const double noiseScale = std::pow(10.0, -config.snrDb / 20.0);
 
     for (std::size_t ip = 0; ip < np; ++ip) {
         const double t = frame.slowTimeSec[ip];
-        const double gate = SmoothGate(t, config.eventStartSec, config.eventDurationSec, ramp);
-        const double strainT = strainAmp * std::sin(2.0 * kPi * config.eventFrequencyHz * t) * gate;
+        const double vibration = config.useAudioVibration
+                                     ? LoopSample(config.vibrationSamples, config.vibrationSampleRateHz, t)
+                                     : std::sin(2.0 * kPi * config.eventFrequencyHz * t);
+        const double strainT = strainAmp * vibration;
 
         for (std::size_t iz = 0; iz < nz; ++iz) {
             const double phase = phaseScale * cumulativeProfile[iz] * strainT;
@@ -103,8 +98,8 @@ AcquisitionFrame DasSimulator::Generate(const AcquisitionConfig& config) const
             const float ny = static_cast<float>(noiseScale * std::max(ampY, 1.0e-4f) / std::sqrt(2.0));
 
             const std::size_t idx = ip * nz + iz;
-            frame.polX[idx] = rayleighX[iz] * ph + nx * std::complex<float>(normal(rng), normal(rng));
-            frame.polY[idx] = rayleighY[iz] * ph + ny * std::complex<float>(normal(rng), normal(rng));
+            frame.polX[idx] = rayleighX[iz] * ph + nx * std::complex<float>(normal(noiseRng_), normal(noiseRng_));
+            frame.polY[idx] = rayleighY[iz] * ph + ny * std::complex<float>(normal(noiseRng_), normal(noiseRng_));
             frame.bpd[idx] = ampX * ampX + ampY * ampY;
         }
     }

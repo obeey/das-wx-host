@@ -9,10 +9,12 @@
 #include <atomic>
 #include <memory>
 #include <thread>
+#include <vector>
 
 class wxButton;
 class wxCheckBox;
 class wxStaticText;
+class AudioStreamPlayer;
 
 class MainFrame final : public wxFrame {
 public:
@@ -32,9 +34,16 @@ private:
     AcquisitionConfig ReadConfig() const;
     void OnSize(wxSizeEvent& event);
     void OnRun(wxCommandEvent& event);
+    void OnChooseAudio(wxCommandEvent& event);
+    void OnPlayEventAudio(wxCommandEvent& event);
     void OnClose(wxCloseEvent& event);
+    void OnWaterfallSelected(double selectedTimeSec, double selectedDistanceM);
     void RunSimulationWorker(AcquisitionConfig config);
     void ApplyResult(std::shared_ptr<DasResult> result);
+    void RefreshEventSelection(DasResult& result);
+    void StartEventAudio(const DasResult& result);
+    void StopEventAudio();
+    void UpdateAudioSourceLabel();
     void SetBusy(bool busy);
 
     wxSpinCtrlDouble* chirpBandwidthMHz_ = nullptr;
@@ -53,6 +62,9 @@ private:
     wxSpinCtrlDouble* eventFrequencyHz_ = nullptr;
     wxSpinCtrlDouble* eventStrainNstrain_ = nullptr;
     wxCheckBox* useCuda_ = nullptr;
+    wxButton* chooseAudioButton_ = nullptr;
+    wxStaticText* audioSourceText_ = nullptr;
+    wxCheckBox* playEventAudio_ = nullptr;
     wxButton* runButton_ = nullptr;
     wxStaticText* statusText_ = nullptr;
 
@@ -63,4 +75,15 @@ private:
 
     std::thread worker_;
     std::atomic_bool workerRunning_ = false;
+    std::atomic_bool stopRequested_ = false;
+
+    std::shared_ptr<DasResult> currentResult_;
+    bool hasSelection_ = false;
+    double selectedDistanceM_ = 0.0;
+    double selectedTimeSec_ = 0.0;
+
+    std::vector<float> audioVibrationSamples_;
+    double audioVibrationSampleRateHz_ = 0.0;
+    std::string audioVibrationName_;
+    std::unique_ptr<AudioStreamPlayer> eventAudioStream_;
 };

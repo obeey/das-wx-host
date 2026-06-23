@@ -149,55 +149,10 @@ DasResult DasDemodulator::Process(const AcquisitionFrame& frame, const Acquisiti
     const std::size_t driftWindow = std::max<std::size_t>(5, static_cast<std::size_t>(config.prfHz / 40.0));
     RemoveMovingAverage(result.dynamicStrainNstrain, pairCount, frame.pulseCount, driftWindow | 1U);
 
-    const std::size_t eventIndex = NearestIndex(result.distanceM, config.eventPositionM);
-    result.selectedDistanceM = result.distanceM[eventIndex];
-    result.eventTimeSec = frame.slowTimeSec;
-    result.eventTraceNstrain.resize(frame.pulseCount);
-    for (std::size_t ip = 0; ip < frame.pulseCount; ++ip) {
-        result.eventTraceNstrain[ip] = result.dynamicStrainNstrain[eventIndex * frame.pulseCount + ip];
-    }
-
-    const std::size_t nfft = frame.pulseCount;
-    const std::size_t bins = nfft / 2 + 1;
-    result.spectrumHz.resize(bins);
-    result.spectrumDb.resize(bins);
-
-    std::vector<float> windowed(frame.pulseCount);
-    const float mean = std::accumulate(result.eventTraceNstrain.begin(), result.eventTraceNstrain.end(), 0.0f) /
-        static_cast<float>(std::max<std::size_t>(1, result.eventTraceNstrain.size()));
-    for (std::size_t i = 0; i < frame.pulseCount; ++i) {
-        const double w = 0.5 - 0.5 * std::cos(2.0 * kPi * static_cast<double>(i) / static_cast<double>(frame.pulseCount - 1));
-        windowed[i] = static_cast<float>((result.eventTraceNstrain[i] - mean) * w);
-    }
-
-    float maxMag = 1.0e-12f;
-    std::vector<float> mags(bins);
-    for (std::size_t k = 0; k < bins; ++k) {
-        double re = 0.0;
-        double im = 0.0;
-        for (std::size_t n = 0; n < frame.pulseCount; ++n) {
-            const double a = -2.0 * kPi * static_cast<double>(k) * static_cast<double>(n) / static_cast<double>(nfft);
-            re += windowed[n] * std::cos(a);
-            im += windowed[n] * std::sin(a);
-        }
-        mags[k] = static_cast<float>(std::sqrt(re * re + im * im));
-        maxMag = std::max(maxMag, mags[k]);
-        result.spectrumHz[k] = static_cast<float>(static_cast<double>(k) * config.prfHz / static_cast<double>(nfft));
-    }
-
-    std::size_t peakIndex = 1;
-    const double fMin = std::max(1.0, config.eventFrequencyHz * 0.4);
-    const double fMax = std::min(config.prfHz * 0.5, config.eventFrequencyHz * 1.6);
-    for (std::size_t k = 1; k < bins; ++k) {
-        if (result.spectrumHz[k] >= fMin && result.spectrumHz[k] <= fMax && mags[k] > mags[peakIndex]) {
-            peakIndex = k;
-        }
-    }
-    result.estimatedFrequencyHz = result.spectrumHz[peakIndex];
-
-    for (std::size_t k = 0; k < bins; ++k) {
-        result.spectrumDb[k] = 20.0f * std::log10(mags[k] / maxMag + 1.0e-9f);
-    }
+    const double defaultTimeSec = !frame.slowTimeSec.empty()
+                                      ? 0.5 * (static_cast<double>(frame.slowTimeSec.front()) + static_cast<double>(frame.slowTimeSec.back()))
+                                      : 0.0;
+    UpdateEventSelection(result, config.eventPositionM, defaultTimeSec);
 
     std::ostringstream status;
     status << "Range resolution " << result.rangeResolutionM << " m, selected "
@@ -211,4 +166,72 @@ DasResult DasDemodulator::Process(const AcquisitionFrame& frame, const Acquisiti
     }
     result.status = status.str();
     return result;
+}
+
+void DasDemodulator::UpdateEventSelection(DasResult& result, double selectedDistanceM, double selectedTimeSec) const
+{
+    if (result.rangeCount == 0 || result.pulseCount == 0 || result.distanceM.empty() || result.dynamicStrainNstrain.empty()) {
+        return;
+    }
+
+    const std::size_t eventIndex = NearestIndex(result.distanceM, selectedDistanceM);
+    result.selectedDistanceM = result.distanceM[eventIndex];
+    result.eventTimeSec = result.slowTimeSec;
+    result.eventTraceNstrain.resize(result.pulseCount);
+    for (std::size_t ip = 0; ip < result.pulseCount; ++ip) {
+        result.eventTraceNstrain[ip] = result.dynamicStrainNstrain[eventIndex * result.pulseCount + ip];
+    }
+
+    if (result.slowTimeSec.empty()) {
+        result.selectedTimeSec = 0.0;
+    } else {
+        result.selectedTimeSec = std::clamp(
+            selectedTimeSec,
+            static_cast<double>(result.slowTimeSec.front()),
+            static_cast<double>(result.slowTimeSec.back()));
+    }
+
+    const std::size_t nfft = result.pulseCount;
+    const std::size_t bins = nfft / 2 + 1;
+    result.spectrumHz.assign(bins, 0.0f);
+    result.spectrumDb.assign(bins, 0.0f);
+    if (result.eventTraceNstrain.size() < 2) {
+        result.estimatedFrequencyHz = 0.0;
+        return;
+    }
+
+    std::vector<float> windowed(result.pulseCount);
+    const float mean = std::accumulate(result.eventTraceNstrain.begin(), result.eventTraceNstrain.end(), 0.0f) /
+        static_cast<float>(std::max<std::size_t>(1, result.eventTraceNstrain.size()));
+    for (std::size_t i = 0; i < result.pulseCount; ++i) {
+        const double w = 0.5 - 0.5 * std::cos(2.0 * kPi * static_cast<double>(i) / static_cast<double>(result.pulseCount - 1));
+        windowed[i] = static_cast<float>((result.eventTraceNstrain[i] - mean) * w);
+    }
+
+    float maxMag = 1.0e-12f;
+    std::vector<float> mags(bins);
+    for (std::size_t k = 0; k < bins; ++k) {
+        double re = 0.0;
+        double im = 0.0;
+        for (std::size_t n = 0; n < result.pulseCount; ++n) {
+            const double a = -2.0 * kPi * static_cast<double>(k) * static_cast<double>(n) / static_cast<double>(nfft);
+            re += windowed[n] * std::cos(a);
+            im += windowed[n] * std::sin(a);
+        }
+        mags[k] = static_cast<float>(std::sqrt(re * re + im * im));
+        maxMag = std::max(maxMag, mags[k]);
+        result.spectrumHz[k] = static_cast<float>(static_cast<double>(k) * result.config.prfHz / static_cast<double>(nfft));
+    }
+
+    std::size_t peakIndex = bins > 1 ? 1 : 0;
+    for (std::size_t k = peakIndex + 1; k < bins; ++k) {
+        if (mags[k] > mags[peakIndex]) {
+            peakIndex = k;
+        }
+    }
+    result.estimatedFrequencyHz = result.spectrumHz[peakIndex];
+
+    for (std::size_t k = 0; k < bins; ++k) {
+        result.spectrumDb[k] = 20.0f * std::log10(mags[k] / maxMag + 1.0e-9f);
+    }
 }

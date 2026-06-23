@@ -1,6 +1,7 @@
 #include "PlotPanel.h"
 
 #include <wx/dcbuffer.h>
+#include <wx/event.h>
 
 #include <algorithm>
 #include <cmath>
@@ -68,12 +69,18 @@ PlotPanel::PlotPanel(wxWindow* parent, PlotKind kind, wxString title)
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     Bind(wxEVT_PAINT, &PlotPanel::OnPaint, this);
     Bind(wxEVT_SIZE, &PlotPanel::OnSize, this);
+    Bind(wxEVT_LEFT_DOWN, &PlotPanel::OnLeftDown, this);
 }
 
 void PlotPanel::SetResult(std::shared_ptr<const DasResult> result)
 {
     result_ = std::move(result);
     Refresh();
+}
+
+void PlotPanel::SetWaterfallSelectionHandler(std::function<void(double, double)> handler)
+{
+    waterfallSelectionHandler_ = std::move(handler);
 }
 
 void PlotPanel::OnSize(wxSizeEvent& event)
@@ -88,8 +95,7 @@ void PlotPanel::OnPaint(wxPaintEvent&)
     dc.SetBackground(wxBrush(wxColour(250, 251, 252)));
     dc.Clear();
 
-    const wxSize size = GetClientSize();
-    wxRect plotRect(76, 28, std::max(10, size.GetWidth() - 102), std::max(10, size.GetHeight() - 76));
+    const wxRect plotRect = GetPlotRect();
 
     dc.SetTextForeground(wxColour(35, 42, 52));
     dc.SetFont(wxFontInfo(10).Bold());
@@ -125,6 +131,7 @@ void PlotPanel::OnPaint(wxPaintEvent&)
             const float maxY = !result_->distanceM.empty() ? result_->distanceM.back() : static_cast<float>(result_->config.simulationStopM);
             DrawAxes(dc, plotRect, "Time (s)", "Distance (m)", minX, maxX, minY, maxY);
         }
+        DrawWaterfallSelection(dc, plotRect, *result_);
         break;
     case PlotKind::EventTrace:
         {
@@ -141,6 +148,32 @@ void PlotPanel::OnPaint(wxPaintEvent&)
         DrawLine(dc, plotRect, result_->spectrumHz, result_->spectrumDb);
         break;
     }
+}
+
+void PlotPanel::OnLeftDown(wxMouseEvent& event)
+{
+    if (kind_ != PlotKind::Waterfall || !result_ || !waterfallSelectionHandler_) {
+        event.Skip();
+        return;
+    }
+
+    const wxRect plotRect = GetPlotRect();
+    if (!plotRect.Contains(event.GetPosition())) {
+        event.Skip();
+        return;
+    }
+
+    const float minTime = !result_->slowTimeSec.empty() ? result_->slowTimeSec.front() : 0.0f;
+    const float maxTime = !result_->slowTimeSec.empty()
+                              ? result_->slowTimeSec.back()
+                              : static_cast<float>(std::max<std::size_t>(1, result_->pulseCount) - 1) /
+                                    static_cast<float>(std::max(1.0, result_->config.prfHz));
+    const float minDistance = !result_->distanceM.empty() ? result_->distanceM.front() : static_cast<float>(result_->config.simulationStartM);
+    const float maxDistance = !result_->distanceM.empty() ? result_->distanceM.back() : static_cast<float>(result_->config.simulationStopM);
+    const double tx = static_cast<double>(event.GetX() - plotRect.GetLeft()) / std::max(1, plotRect.GetWidth());
+    const double ty = static_cast<double>(plotRect.GetBottom() - event.GetY()) / std::max(1, plotRect.GetHeight());
+
+    waterfallSelectionHandler_(minTime + tx * (maxTime - minTime), minDistance + ty * (maxDistance - minDistance));
 }
 
 void PlotPanel::DrawAxes(wxDC& dc,
@@ -255,6 +288,42 @@ void PlotPanel::DrawWaterfall(wxDC& dc, const wxRect& rect, const DasResult& res
         }
     }
     dc.DrawBitmap(wxBitmap(image), rect.GetTopLeft());
+}
+
+void PlotPanel::DrawWaterfallSelection(wxDC& dc, const wxRect& rect, const DasResult& result)
+{
+    if (result.slowTimeSec.empty() || result.distanceM.empty()) {
+        return;
+    }
+
+    const double minTime = result.slowTimeSec.front();
+    const double maxTime = result.slowTimeSec.back();
+    const double minDistance = result.distanceM.front();
+    const double maxDistance = result.distanceM.back();
+    if (result.selectedTimeSec < minTime || result.selectedTimeSec > maxTime ||
+        result.selectedDistanceM < minDistance || result.selectedDistanceM > maxDistance) {
+        return;
+    }
+
+    const int x = rect.GetLeft() + static_cast<int>(
+        (result.selectedTimeSec - minTime) / std::max(1.0e-12, maxTime - minTime) * rect.GetWidth());
+    const int y = rect.GetBottom() - static_cast<int>(
+        (result.selectedDistanceM - minDistance) / std::max(1.0e-12, maxDistance - minDistance) * rect.GetHeight());
+
+    dc.SetClippingRegion(rect);
+    dc.SetPen(wxPen(wxColour(20, 22, 25), 1, wxPENSTYLE_SHORT_DASH));
+    dc.DrawLine(x, rect.GetTop(), x, rect.GetBottom());
+    dc.DrawLine(rect.GetLeft(), y, rect.GetRight(), y);
+    dc.SetBrush(wxBrush(wxColour(255, 255, 255)));
+    dc.SetPen(wxPen(wxColour(20, 22, 25), 1));
+    dc.DrawCircle(x, y, 4);
+    dc.DestroyClippingRegion();
+}
+
+wxRect PlotPanel::GetPlotRect() const
+{
+    const wxSize size = GetClientSize();
+    return wxRect(76, 28, std::max(10, size.GetWidth() - 102), std::max(10, size.GetHeight() - 76));
 }
 
 wxColour PlotPanel::ColorMap(float value) const
