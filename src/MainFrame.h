@@ -30,6 +30,7 @@ private:
                               int digits = 2);
     void BuildUi();
     AcquisitionConfig ReadConfig() const;
+    void OnSize(wxSizeEvent& event);
     void OnRun(wxCommandEvent& event);
     void OnClose(wxCloseEvent& event);
     void RunSimulationWorker(AcquisitionConfig config);

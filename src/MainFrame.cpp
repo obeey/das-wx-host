@@ -5,6 +5,7 @@
 
 #include <wx/button.h>
 #include <wx/checkbox.h>
+#include <wx/event.h>
 #include <wx/icon.h>
 #include <wx/scrolwin.h>
 #include <wx/sizer.h>
@@ -31,6 +32,7 @@ MainFrame::MainFrame()
     SetIcon(wxICON(APP_ICON));
 #endif
     BuildUi();
+    Bind(wxEVT_SIZE, &MainFrame::OnSize, this);
     Bind(wxEVT_BUTTON, &MainFrame::OnRun, this, kRunButtonId);
     Bind(wxEVT_CLOSE_WINDOW, &MainFrame::OnClose, this);
 }
@@ -142,6 +144,13 @@ AcquisitionConfig MainFrame::ReadConfig() const
     return config;
 }
 
+void MainFrame::OnSize(wxSizeEvent& event)
+{
+    Layout();
+    Refresh(true);
+    event.Skip();
+}
+
 void MainFrame::OnRun(wxCommandEvent&)
 {
     if (workerRunning_) {
@@ -198,6 +207,8 @@ void MainFrame::ApplyResult(std::shared_ptr<DasResult> result)
     tracePlot_->SetResult(result);
     spectrumPlot_->SetResult(result);
     statusText_->SetLabel(wxString::FromUTF8(result->status.c_str()));
+    Layout();
+    Refresh(true);
 }
 
 void MainFrame::SetBusy(bool busy)

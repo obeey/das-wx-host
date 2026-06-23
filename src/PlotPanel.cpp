@@ -12,12 +12,19 @@ PlotPanel::PlotPanel(wxWindow* parent, PlotKind kind, wxString title)
 {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     Bind(wxEVT_PAINT, &PlotPanel::OnPaint, this);
+    Bind(wxEVT_SIZE, &PlotPanel::OnSize, this);
 }
 
 void PlotPanel::SetResult(std::shared_ptr<const DasResult> result)
 {
     result_ = std::move(result);
     Refresh();
+}
+
+void PlotPanel::OnSize(wxSizeEvent& event)
+{
+    Refresh(true);
+    event.Skip();
 }
 
 void PlotPanel::OnPaint(wxPaintEvent&)

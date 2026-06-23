@@ -22,6 +22,7 @@ public:
 
 private:
     void OnPaint(wxPaintEvent& event);
+    void OnSize(wxSizeEvent& event);
     void DrawAxes(wxDC& dc, const wxRect& rect, const wxString& xLabel, const wxString& yLabel);
     void DrawLine(wxDC& dc, const wxRect& rect, const std::vector<float>& x, const std::vector<float>& y);
     void DrawWaterfall(wxDC& dc, const wxRect& rect, const DasResult& result);

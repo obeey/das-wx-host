@@ -11,6 +11,8 @@ public:
         }
         auto* frame = new MainFrame();
         frame->Show(true);
+        frame->Maximize(true);
+        frame->SendSizeEvent();
         return true;
     }
 };
