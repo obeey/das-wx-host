@@ -13,7 +13,7 @@ struct AcquisitionConfig {
 
     double chirpBandwidthHz = 300e6;
     double chirpDurationSec = 1.0e-6;
-    double aomCenterFrequencyHz = 80e6;
+    double aomStartFrequencyHz = 80e6;
     double opticalPulseWidthSec = 100e-9;
 
     double fiberLengthM = 40000.0;

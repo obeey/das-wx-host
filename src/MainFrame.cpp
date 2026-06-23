@@ -80,7 +80,7 @@ void MainFrame::BuildUi()
 
     chirpBandwidthMHz_ = AddSpin(leftPanel, left, UiText("DA 扫频带宽 MHz"), 300.0, 10.0, 800.0, 10.0, 1);
     chirpDurationUs_ = AddSpin(leftPanel, left, UiText("啁啾时宽 us"), 1.0, 0.05, 50.0, 0.05, 3);
-    aomCenterMHz_ = AddSpin(leftPanel, left, UiText("AOM 中心 MHz"), 80.0, 10.0, 400.0, 1.0, 1);
+    aomStartMHz_ = AddSpin(leftPanel, left, UiText("AOM 起始 MHz"), 80.0, 10.0, 400.0, 1.0, 1);
     pulseWidthNs_ = AddSpin(leftPanel, left, UiText("光开关脉宽 ns"), 100.0, 20.0, 1000.0, 10.0, 1);
     adcGsps_ = AddSpin(leftPanel, left, UiText("AD 采样 Gsps"), 1.3, 0.1, 5.0, 0.1, 3);
     fiberKm_ = AddSpin(leftPanel, left, UiText("模块距离 km"), 40.0, 1.0, 100.0, 1.0, 1);
@@ -126,7 +126,7 @@ AcquisitionConfig MainFrame::ReadConfig() const
     AcquisitionConfig config;
     config.chirpBandwidthHz = chirpBandwidthMHz_->GetValue() * 1.0e6;
     config.chirpDurationSec = chirpDurationUs_->GetValue() * 1.0e-6;
-    config.aomCenterFrequencyHz = aomCenterMHz_->GetValue() * 1.0e6;
+    config.aomStartFrequencyHz = aomStartMHz_->GetValue() * 1.0e6;
     config.opticalPulseWidthSec = pulseWidthNs_->GetValue() * 1.0e-9;
     config.adcSampleRateHz = adcGsps_->GetValue() * 1.0e9;
     config.fiberLengthM = fiberKm_->GetValue() * 1000.0;

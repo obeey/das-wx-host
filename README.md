@@ -6,6 +6,7 @@ Implemented now:
 
 - wxWidgets desktop GUI with parameter controls.
 - AOM chirp / DA configuration fields, including 300 MHz sweep bandwidth.
+- The AOM RF frequency field is the sweep start frequency; 80 MHz with 300 MHz bandwidth means an 80-380 MHz sweep, not a sweep centered at 80 MHz.
 - AOM optical switch pulse settings.
 - AD acquisition settings for 4-channel X/Y + BPD style input, 14-bit depth, 1.3 Gsps default.
 - Simulated Rayleigh backscatter and vibration event data while the acquisition card is absent.

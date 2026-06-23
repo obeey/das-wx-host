@@ -39,7 +39,7 @@ private:
 
     wxSpinCtrlDouble* chirpBandwidthMHz_ = nullptr;
     wxSpinCtrlDouble* chirpDurationUs_ = nullptr;
-    wxSpinCtrlDouble* aomCenterMHz_ = nullptr;
+    wxSpinCtrlDouble* aomStartMHz_ = nullptr;
     wxSpinCtrlDouble* pulseWidthNs_ = nullptr;
     wxSpinCtrlDouble* adcGsps_ = nullptr;
     wxSpinCtrlDouble* fiberKm_ = nullptr;
