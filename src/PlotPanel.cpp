@@ -5,6 +5,61 @@
 #include <algorithm>
 #include <cmath>
 
+namespace {
+struct PlotRange {
+    float minX = 0.0f;
+    float maxX = 1.0f;
+    float minY = 0.0f;
+    float maxY = 1.0f;
+};
+
+void ExpandFlatRange(float& minValue, float& maxValue)
+{
+    if (std::abs(maxValue - minValue) >= 1.0e-6f) {
+        return;
+    }
+
+    const float padding = std::max(1.0f, std::abs(minValue) * 0.05f);
+    minValue -= padding;
+    maxValue += padding;
+}
+
+PlotRange LineRange(const std::vector<float>& x, const std::vector<float>& y)
+{
+    PlotRange range;
+    if (x.empty() || x.size() != y.size()) {
+        return range;
+    }
+
+    const auto [minXIt, maxXIt] = std::minmax_element(x.begin(), x.end());
+    const auto [minYIt, maxYIt] = std::minmax_element(y.begin(), y.end());
+    range.minX = *minXIt;
+    range.maxX = *maxXIt;
+    range.minY = *minYIt;
+    range.maxY = *maxYIt;
+    ExpandFlatRange(range.minX, range.maxX);
+    ExpandFlatRange(range.minY, range.maxY);
+    return range;
+}
+
+wxString FormatTick(float value)
+{
+    const float magnitude = std::abs(value);
+    if (magnitude >= 100.0f || magnitude < 0.01f) {
+        return wxString::Format("%.0f", value);
+    }
+    if (magnitude >= 10.0f) {
+        return wxString::Format("%.1f", value);
+    }
+    return wxString::Format("%.2f", value);
+}
+
+int ClampTextLeft(int x, int width, const wxRect& bounds)
+{
+    return std::clamp(x, bounds.GetLeft(), bounds.GetRight() - width + 1);
+}
+}
+
 PlotPanel::PlotPanel(wxWindow* parent, PlotKind kind, wxString title)
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_SIMPLE),
       kind_(kind),
@@ -34,7 +89,7 @@ void PlotPanel::OnPaint(wxPaintEvent&)
     dc.Clear();
 
     const wxSize size = GetClientSize();
-    wxRect plotRect(58, 28, std::max(10, size.GetWidth() - 76), std::max(10, size.GetHeight() - 64));
+    wxRect plotRect(76, 28, std::max(10, size.GetWidth() - 102), std::max(10, size.GetHeight() - 76));
 
     dc.SetTextForeground(wxColour(35, 42, 52));
     dc.SetFont(wxFontInfo(10).Bold());
@@ -48,39 +103,95 @@ void PlotPanel::OnPaint(wxPaintEvent&)
 
     switch (kind_) {
     case PlotKind::RayleighTrace:
-        DrawAxes(dc, plotRect, "Distance (m)", "Amplitude (dB)");
-        DrawLine(dc, plotRect, result_->config.simulationStopM > 0 ? result_->config.dzM > 0 ? std::vector<float>() : std::vector<float>() : std::vector<float>(), result_->rayleighDb);
         {
             std::vector<float> x(result_->rayleighDb.size());
             for (std::size_t i = 0; i < x.size(); ++i) {
                 x[i] = static_cast<float>(result_->config.simulationStartM + static_cast<double>(i) * result_->config.dzM);
             }
+            const PlotRange range = LineRange(x, result_->rayleighDb);
+            DrawAxes(dc, plotRect, "Distance (m)", "Amplitude (dB)", range.minX, range.maxX, range.minY, range.maxY);
             DrawLine(dc, plotRect, x, result_->rayleighDb);
         }
         break;
     case PlotKind::Waterfall:
-        DrawAxes(dc, plotRect, "Time (s)", "Distance (m)");
         DrawWaterfall(dc, plotRect, *result_);
+        {
+            const float minX = !result_->slowTimeSec.empty() ? result_->slowTimeSec.front() : 0.0f;
+            const float maxX = !result_->slowTimeSec.empty()
+                                   ? result_->slowTimeSec.back()
+                                   : static_cast<float>(std::max<std::size_t>(1, result_->pulseCount) - 1) /
+                                         static_cast<float>(std::max(1.0, result_->config.prfHz));
+            const float minY = !result_->distanceM.empty() ? result_->distanceM.front() : static_cast<float>(result_->config.simulationStartM);
+            const float maxY = !result_->distanceM.empty() ? result_->distanceM.back() : static_cast<float>(result_->config.simulationStopM);
+            DrawAxes(dc, plotRect, "Time (s)", "Distance (m)", minX, maxX, minY, maxY);
+        }
         break;
     case PlotKind::EventTrace:
-        DrawAxes(dc, plotRect, "Time (s)", "Strain (nstrain)");
+        {
+            const PlotRange range = LineRange(result_->eventTimeSec, result_->eventTraceNstrain);
+            DrawAxes(dc, plotRect, "Time (s)", "Strain (nstrain)", range.minX, range.maxX, range.minY, range.maxY);
+        }
         DrawLine(dc, plotRect, result_->eventTimeSec, result_->eventTraceNstrain);
         break;
     case PlotKind::Spectrum:
-        DrawAxes(dc, plotRect, "Frequency (Hz)", "Amplitude (dB)");
+        {
+            const PlotRange range = LineRange(result_->spectrumHz, result_->spectrumDb);
+            DrawAxes(dc, plotRect, "Frequency (Hz)", "Amplitude (dB)", range.minX, range.maxX, range.minY, range.maxY);
+        }
         DrawLine(dc, plotRect, result_->spectrumHz, result_->spectrumDb);
         break;
     }
 }
 
-void PlotPanel::DrawAxes(wxDC& dc, const wxRect& rect, const wxString& xLabel, const wxString& yLabel)
+void PlotPanel::DrawAxes(wxDC& dc,
+                         const wxRect& rect,
+                         const wxString& xLabel,
+                         const wxString& yLabel,
+                         float minX,
+                         float maxX,
+                         float minY,
+                         float maxY)
 {
+    ExpandFlatRange(minX, maxX);
+    ExpandFlatRange(minY, maxY);
+
+    dc.SetFont(wxFontInfo(8));
+    dc.SetTextForeground(wxColour(79, 89, 102));
+
+    constexpr int tickCount = 5;
+    dc.SetPen(wxPen(wxColour(225, 230, 236), 1));
+    for (int i = 0; i < tickCount; ++i) {
+        const double t = static_cast<double>(i) / static_cast<double>(tickCount - 1);
+        const int x = rect.GetLeft() + static_cast<int>(std::round(t * rect.GetWidth()));
+        const int y = rect.GetBottom() - static_cast<int>(std::round(t * rect.GetHeight()));
+        dc.DrawLine(x, rect.GetTop(), x, rect.GetBottom());
+        dc.DrawLine(rect.GetLeft(), y, rect.GetRight(), y);
+    }
+
     dc.SetPen(wxPen(wxColour(176, 185, 196), 1));
     dc.SetBrush(*wxTRANSPARENT_BRUSH);
     dc.DrawRectangle(rect);
-    dc.SetFont(wxFontInfo(8));
-    dc.SetTextForeground(wxColour(79, 89, 102));
-    dc.DrawText(xLabel, rect.GetLeft() + rect.GetWidth() / 2 - 34, rect.GetBottom() + 20);
+
+    dc.SetPen(wxPen(wxColour(118, 130, 145), 1));
+    const wxRect panelBounds(GetClientRect());
+    for (int i = 0; i < tickCount; ++i) {
+        const double t = static_cast<double>(i) / static_cast<double>(tickCount - 1);
+        const int x = rect.GetLeft() + static_cast<int>(std::round(t * rect.GetWidth()));
+        const int y = rect.GetBottom() - static_cast<int>(std::round(t * rect.GetHeight()));
+
+        dc.DrawLine(x, rect.GetBottom(), x, rect.GetBottom() + 4);
+        const wxString xTick = FormatTick(static_cast<float>(minX + t * (maxX - minX)));
+        const wxSize xTickSize = dc.GetTextExtent(xTick);
+        dc.DrawText(xTick, ClampTextLeft(x - xTickSize.GetWidth() / 2, xTickSize.GetWidth(), panelBounds), rect.GetBottom() + 6);
+
+        dc.DrawLine(rect.GetLeft() - 4, y, rect.GetLeft(), y);
+        const wxString yTick = FormatTick(static_cast<float>(minY + t * (maxY - minY)));
+        const wxSize yTickSize = dc.GetTextExtent(yTick);
+        dc.DrawText(yTick, rect.GetLeft() - yTickSize.GetWidth() - 8, y - yTickSize.GetHeight() / 2);
+    }
+
+    const wxSize xLabelSize = dc.GetTextExtent(xLabel);
+    dc.DrawText(xLabel, rect.GetLeft() + rect.GetWidth() / 2 - xLabelSize.GetWidth() / 2, rect.GetBottom() + 28);
     dc.DrawRotatedText(yLabel, 8, rect.GetTop() + rect.GetHeight() / 2 + 42, 90.0);
 }
 
@@ -92,14 +203,12 @@ void PlotPanel::DrawLine(wxDC& dc, const wxRect& rect, const std::vector<float>&
 
     const auto [minXIt, maxXIt] = std::minmax_element(x.begin(), x.end());
     const auto [minYIt, maxYIt] = std::minmax_element(y.begin(), y.end());
-    const float minX = *minXIt;
-    const float maxX = *maxXIt;
+    float minX = *minXIt;
+    float maxX = *maxXIt;
     float minY = *minYIt;
     float maxY = *maxYIt;
-    if (std::abs(maxY - minY) < 1.0e-6f) {
-        minY -= 1.0f;
-        maxY += 1.0f;
-    }
+    ExpandFlatRange(minX, maxX);
+    ExpandFlatRange(minY, maxY);
 
     const auto px = [&](float value) {
         return rect.GetLeft() + static_cast<int>((value - minX) / std::max(1.0e-12f, maxX - minX) * rect.GetWidth());
@@ -119,12 +228,6 @@ void PlotPanel::DrawLine(wxDC& dc, const wxRect& rect, const std::vector<float>&
     }
     dc.DestroyClippingRegion();
 
-    dc.SetFont(wxFontInfo(8));
-    dc.SetTextForeground(wxColour(79, 89, 102));
-    dc.DrawText(wxString::Format("%.3g", minX), rect.GetLeft() - 4, rect.GetBottom() + 4);
-    dc.DrawText(wxString::Format("%.3g", maxX), rect.GetRight() - 34, rect.GetBottom() + 4);
-    dc.DrawText(wxString::Format("%.3g", maxY), rect.GetLeft() - 50, rect.GetTop() - 2);
-    dc.DrawText(wxString::Format("%.3g", minY), rect.GetLeft() - 50, rect.GetBottom() - 12);
 }
 
 void PlotPanel::DrawWaterfall(wxDC& dc, const wxRect& rect, const DasResult& result)
