@@ -24,6 +24,7 @@ else()
 endif()
 
 set(DAS_SOURCES
+    app.rc
     src/main.cpp
     src/MainFrame.cpp
     src/PlotPanel.cpp

@@ -5,6 +5,7 @@
 
 #include <wx/button.h>
 #include <wx/checkbox.h>
+#include <wx/icon.h>
 #include <wx/scrolwin.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
@@ -26,6 +27,9 @@ wxString UiText(const char* text)
 MainFrame::MainFrame()
     : wxFrame(nullptr, wxID_ANY, UiText("DAS 上位机 - 仿真版"), wxDefaultPosition, wxSize(1380, 860))
 {
+#ifdef __WXMSW__
+    SetIcon(wxICON(APP_ICON));
+#endif
     BuildUi();
     Bind(wxEVT_BUTTON, &MainFrame::OnRun, this, kRunButtonId);
     Bind(wxEVT_CLOSE_WINDOW, &MainFrame::OnClose, this);
